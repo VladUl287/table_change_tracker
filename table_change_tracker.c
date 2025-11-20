@@ -11,8 +11,6 @@ static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 
 static uint64 change_counter = 0;
 
-Datum get_change_counter(PG_FUNCTION_ARGS);
-
 static void track_utility(
     PlannedStmt *pstmt, const char *queryString, bool readOnlyTree, ProcessUtilityContext context,
     ParamListInfo params, QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc);
@@ -22,11 +20,17 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags);
 void _PG_init(void);
 void _PG_fini(void);
 
+PG_FUNCTION_INFO_V1(hello_world);
 PG_FUNCTION_INFO_V1(get_change_counter);
+
+Datum hello_world(PG_FUNCTION_ARGS)
+{
+    PG_RETURN_TEXT_P(cstring_to_text("Hello from table change tracker extension!"));
+}
 
 Datum get_change_counter(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_INT64(change_counter);
+    PG_RETURN_INT64(1);
 }
 
 static void track_utility(
@@ -61,10 +65,14 @@ void _PG_init(void)
 
     prev_ProcessUtility = ProcessUtility_hook;
     ProcessUtility_hook = track_utility;
+
+    ereport(LOG, (errmsg("Table Change Tracker: Extension loaded")));
 }
 
 void _PG_fini(void)
 {
     ExecutorStart_hook = prev_ExecutorStart;
     ProcessUtility_hook = prev_ProcessUtility;
+
+    ereport(LOG, (errmsg("Table Change Tracker: Extension unloaded")));
 }
