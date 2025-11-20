@@ -496,6 +496,8 @@ buildtrees/
 packages/
 installed/
 downloads/
+dist/
+*.egg-info/
 
 # Cache directories
 binarycache/
@@ -503,3 +505,23 @@ prebuilt/
 
 # Configuration files (user-specific)
 vcpkg-configuration.json.local
+
+# Compiled extension files
+*.so
+*.o
+*.dll
+
+# Platform-specific files
+*.dylib
+*.a
+
+# CMake build files
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt
+Makefile
+
+# Development files
+*.swp
+*.swo
+*~
