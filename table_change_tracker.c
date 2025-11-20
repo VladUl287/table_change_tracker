@@ -20,13 +20,7 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags);
 void _PG_init(void);
 void _PG_fini(void);
 
-PG_FUNCTION_INFO_V1(hello_world);
 PG_FUNCTION_INFO_V1(get_change_counter);
-
-Datum hello_world(PG_FUNCTION_ARGS)
-{
-    PG_RETURN_TEXT_P(cstring_to_text("Hello from table change tracker extension!"));
-}
 
 Datum get_change_counter(PG_FUNCTION_ARGS)
 {
