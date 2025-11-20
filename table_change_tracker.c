@@ -30,7 +30,7 @@ Datum hello_world(PG_FUNCTION_ARGS)
 
 Datum get_change_counter(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_INT64(1);
+    PG_RETURN_INT64(change_counter);
 }
 
 static void track_utility(
