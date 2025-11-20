@@ -1,0 +1,4 @@
+comment = 'A table change tracker PostgreSQL extension'
+default_version = '1.0'
+module_pathname = '$libdir/table_change_tracker'
+relocatable = true
