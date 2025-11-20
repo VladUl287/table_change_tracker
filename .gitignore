@@ -509,6 +509,7 @@ vcpkg-configuration.json.local
 # Compiled extension files
 *.so
 *.o
+*.bc
 *.dll
 
 # Platform-specific files
