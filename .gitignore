@@ -482,3 +482,24 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# vcpkg core
+vcpkg/
+vcpkg_installed/
+vcpkg.exe
+vcpkg-*.exe
+.vcpkg-root
+
+# Build artifacts
+build/
+buildtrees/
+packages/
+installed/
+downloads/
+
+# Cache directories
+binarycache/
+prebuilt/
+
+# Configuration files (user-specific)
+vcpkg-configuration.json.local
