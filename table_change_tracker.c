@@ -3,19 +3,18 @@
 #include "utils/builtins.h"
 #include "tcop/utility.h"
 #include "executor/executor.h"
+#include "storage/shmem.h"
 
 PG_MODULE_MAGIC;
 
-static ProcessUtility_hook_type prev_ProcessUtility = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 
-static uint64 change_counter = 0;
+typedef struct
+{
+    int64 counter;
+} tracker_data_t;
 
-static void track_utility(
-    PlannedStmt *pstmt, const char *queryString, bool readOnlyTree, ProcessUtilityContext context,
-    ParamListInfo params, QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc);
-
-static void track_executor_start(QueryDesc *queryDesc, int eflags);
+static tracker_data_t *tracker_data = NULL;
 
 void _PG_init(void);
 void _PG_fini(void);
@@ -24,17 +23,20 @@ PG_FUNCTION_INFO_V1(get_change_counter);
 
 Datum get_change_counter(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_INT64(change_counter);
+    PG_RETURN_INT64(tracker_data->counter);
 }
 
-static void track_utility(
-    PlannedStmt *pstmt, const char *queryString, bool readOnlyTree, ProcessUtilityContext context,
-    ParamListInfo params, QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc)
+static void shared_memory_shmem_startup(void)
 {
-    if (prev_ProcessUtility)
-        prev_ProcessUtility(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, qc);
-    else
-        standard_ProcessUtility(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, qc);
+    bool found;
+
+    tracker_data = (tracker_data_t *)ShmemInitStruct("tracker_data", sizeof(tracker_data_t), &found);
+
+    if (!found)
+    {
+        memset(tracker_data, 0, sizeof(tracker_data_t));
+        tracker_data->counter = 32311;
+    }
 }
 
 static void track_executor_start(QueryDesc *queryDesc, int eflags)
@@ -43,7 +45,7 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
 
     if (operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE)
     {
-        change_counter++;
+        tracker_data->counter++;
     }
 
     if (prev_ExecutorStart)
@@ -54,11 +56,10 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
 
 void _PG_init(void)
 {
+    shared_memory_shmem_startup();
+
     prev_ExecutorStart = ExecutorStart_hook;
     ExecutorStart_hook = track_executor_start;
-
-    prev_ProcessUtility = ProcessUtility_hook;
-    ProcessUtility_hook = track_utility;
 
     ereport(LOG, (errmsg("Table Change Tracker: Extension loaded")));
 }
@@ -66,7 +67,6 @@ void _PG_init(void)
 void _PG_fini(void)
 {
     ExecutorStart_hook = prev_ExecutorStart;
-    ProcessUtility_hook = prev_ProcessUtility;
 
     ereport(LOG, (errmsg("Table Change Tracker: Extension unloaded")));
 }
