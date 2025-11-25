@@ -5,5 +5,8 @@ make
 <!-- Run wsl -->
 wsl -d Debian
 
+<!-- VS code manual extension installation  -->
+code --install-extension path/extension/name.vsix
+
 <!-- Copy to Docker -->
 docker cp table_change_tracker.so vibrant_murdock:/usr/lib/postgresql/16/lib/ && docker cp table_change_tracker.control vibrant_murdock:/usr/share/postgresql/16/extension/ && docker cp table_change_tracker--1.0.sql vibrant_murdock:/usr/share/postgresql/16/extension/
