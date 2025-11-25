@@ -4,39 +4,146 @@
 #include "tcop/utility.h"
 #include "executor/executor.h"
 #include "storage/shmem.h"
+#include "lib/dshash.h"
+#include "access/hash.h"
+#include "utils/timestamp.h"
 
 PG_MODULE_MAGIC;
 
-static ExecutorStart_hook_type prev_ExecutorStart = NULL;
+typedef struct
+{
+    dshash_table_handle table_handle;
+    dsa_handle area_handle;
+} handlers_t;
 
 typedef struct
 {
-    int64 counter;
-} tracker_data_t;
+    char key[NAMEDATALEN];
+    TimestampTz timestamp;
+} tracker_data;
 
-static tracker_data_t *tracker_data = NULL;
+static ExecutorStart_hook_type prev_ExecutorStart = NULL;
+static handlers_t *handlers = NULL;
 
 void _PG_init(void);
 void _PG_fini(void);
 
-PG_FUNCTION_INFO_V1(get_change_counter);
+PG_FUNCTION_INFO_V1(get_last_timestamp);
 
-Datum get_change_counter(PG_FUNCTION_ARGS)
+static uint32 table_name_hash(const void *key, size_t size, void *arg)
 {
-    PG_RETURN_INT64(tracker_data->counter);
+    const char *table_name = (const char *)key;
+    return hash_any((const unsigned char *)table_name, strlen(table_name));
 }
 
-static void shared_memory_shmem_startup(void)
+static int table_name_compare(const void *a, const void *b, size_t size, void *arg)
 {
+    const char *name1 = (const char *)a;
+    const char *name2 = (const char *)b;
+    return strncmp(name1, name2, NAMEDATALEN);
+}
+
+size_t dshash_count(dshash_table *ht)
+{
+    dshash_seq_status status;
+    void *entry;
+    size_t count = 0;
+
+    dshash_seq_init(&status, ht, false);
+
+    while ((entry = dshash_seq_next(&status)) != NULL)
+        count++;
+
+    dshash_seq_term(&status);
+    return count;
+}
+
+Datum get_last_timestamp(PG_FUNCTION_ARGS)
+{
+    TimestampTz timestamp;
+    text *table_name;
+    char *table_str;
     bool found;
+    char key[NAMEDATALEN];
 
-    tracker_data = (tracker_data_t *)ShmemInitStruct("tracker_data", sizeof(tracker_data_t), &found);
+    ereport(NOTICE, (errmsg("get_last_timestamp::start")));
 
+    table_name = PG_GETARG_TEXT_P(0);
+    table_str = text_to_cstring(table_name);
+
+    memset(key, 0, NAMEDATALEN);
+    strncpy(key, table_str, NAMEDATALEN - 1);
+
+    ereport(NOTICE, (errmsg("get_last_timestamp::key_prepared %s", key)));
+
+    dsa_area *seg = dsa_attach(handlers->area_handle);
+
+    ereport(NOTICE, (errmsg("get_last_timestamp::dsa_attached")));
+
+    dshash_parameters params = {
+        .key_size = NAMEDATALEN,
+        .entry_size = sizeof(tracker_data),
+        .hash_function = table_name_hash,
+        .compare_function = table_name_compare,
+    };
+
+    dshash_table *table = dshash_attach(seg, &params, handlers->table_handle, NULL);
+
+    ereport(NOTICE, (errmsg("get_last_timestamp::dshash_attached")));
+
+    size_t count = dshash_count(table);
+
+    ereport(NOTICE, (errmsg("get_last_timestamp::count %ld", count)));
+
+    tracker_data *entry = dshash_find_or_insert(table, key, &found);
     if (!found)
     {
-        memset(tracker_data, 0, sizeof(tracker_data_t));
-        tracker_data->counter = 32311;
+        entry->timestamp = GetCurrentTimestamp();
     }
+
+    timestamp = entry->timestamp;
+
+    ereport(NOTICE, (errmsg("get_last_timestamp::inserted found=%d", found)));
+
+    dshash_release_lock(table, entry);
+
+    pfree(table_str);
+
+    dshash_detach(table);
+    dsa_detach(seg);
+
+    ereport(NOTICE, (errmsg("get_last_timestamp::detached")));
+
+    PG_RETURN_TIMESTAMP(timestamp);
+}
+
+static void create_hash_table(void)
+{
+    bool found;
+    handlers = (handlers_t *)ShmemInitStruct("handlers_t", sizeof(handlers_t), &found);
+
+    if (found)
+        return;
+
+    dsa_area *seg = dsa_create(0);
+    dsa_handle area_handle = dsa_get_handle(seg);
+
+    dshash_parameters params = {
+        .key_size = NAMEDATALEN,
+        .entry_size = sizeof(tracker_data),
+        .hash_function = table_name_hash,
+        .compare_function = table_name_compare,
+    };
+
+    dshash_table *table = dshash_create(seg, &params, NULL);
+    dshash_table_handle table_handle = dshash_get_hash_table_handle(table);
+
+    dsa_pin(seg);
+    dsa_detach(seg);
+    dshash_detach(table);
+
+    handlers->area_handle = area_handle;
+    handlers->table_handle = table_handle;
 }
 
 static void track_executor_start(QueryDesc *queryDesc, int eflags)
@@ -45,7 +152,7 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
 
     if (operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE)
     {
-        tracker_data->counter++;
+        //update timestamp here
     }
 
     if (prev_ExecutorStart)
@@ -56,17 +163,15 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
 
 void _PG_init(void)
 {
-    shared_memory_shmem_startup();
+    create_hash_table();
 
     prev_ExecutorStart = ExecutorStart_hook;
     ExecutorStart_hook = track_executor_start;
-
-    ereport(LOG, (errmsg("Table Change Tracker: Extension loaded")));
 }
 
 void _PG_fini(void)
 {
-    ExecutorStart_hook = prev_ExecutorStart;
+    //free resources
 
-    ereport(LOG, (errmsg("Table Change Tracker: Extension unloaded")));
+    ExecutorStart_hook = prev_ExecutorStart;
 }
