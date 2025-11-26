@@ -9,3 +9,8 @@ CREATE OR REPLACE FUNCTION enable_table_tracking(table_name TEXT)
 RETURNS void
 AS 'MODULE_PATHNAME', 'enable_table_tracking'
 LANGUAGE C STRICT;
+
+CREATE OR REPLACE FUNCTION disable_table_tracking(table_name TEXT)
+RETURNS BOOLEAN
+AS 'MODULE_PATHNAME', 'disable_table_tracking'
+LANGUAGE C STRICT;

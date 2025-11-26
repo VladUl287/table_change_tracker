@@ -42,6 +42,7 @@ void _PG_init(void);
 void _PG_fini(void);
 
 PG_FUNCTION_INFO_V1(get_last_timestamp);
+PG_FUNCTION_INFO_V1(disable_table_tracking);
 
 static uint32 table_name_hash(const void *key, size_t size, void *arg)
 {
@@ -74,6 +75,11 @@ static size_t dshash_count(dshash_table *ht)
 Datum enable_table_tracking(PG_FUNCTION_ARGS)
 {
     PG_RETURN_VOID();
+}
+
+Datum disable_table_tracking(PG_FUNCTION_ARGS)
+{
+    PG_RETURN_BOOL(false);
 }
 
 Datum get_last_timestamp(PG_FUNCTION_ARGS)
