@@ -18,15 +18,8 @@ PG_MODULE_MAGIC;
 
 typedef struct
 {
-    bool enabled;
-    size_t max_table_name_len;
-} tracker_config_t;
-
-typedef struct
-{
     dshash_table_handle table_handle;
     dsa_handle area_handle;
-    bool initialized;
 } handlers_t;
 
 typedef struct
@@ -50,10 +43,6 @@ static int table_name_compare(const void *a, const void *b, size_t size, void *a
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 
 static handlers_t *handlers = NULL;
-static tracker_config_t config = {
-    .enabled = true,
-    .max_table_name_len = NAMEDATALEN - 1,
-};
 
 static const dshash_parameters dshash_params = {
     .key_size = NAMEDATALEN,
@@ -88,7 +77,7 @@ static void tracker_init(void)
 
     handlers = (handlers_t *)ShmemInitStruct("table_tracker_handlers", sizeof(handlers_t), &found);
 
-    if (found && handlers->initialized)
+    if (found)
         return;
 
     memset(handlers, 0, sizeof(handlers_t));
@@ -106,7 +95,6 @@ static void tracker_init(void)
 
     handlers->area_handle = dsa_get_handle(seg);
     handlers->table_handle = dshash_get_hash_table_handle(table);
-    handlers->initialized = true;
 
     dsa_pin(seg);
     dsa_pin_mapping(seg);
@@ -116,7 +104,7 @@ static void tracker_init(void)
 
 static void tracker_shutdown(void)
 {
-    if (handlers && handlers->initialized)
+    if (handlers)
     {
         dsa_area *seg = tracker_attach_dsa();
         if (seg)
@@ -124,13 +112,12 @@ static void tracker_shutdown(void)
             dsa_unpin(seg);
             dsa_detach(seg);
         }
-        handlers->initialized = false;
     }
 }
 
 static bool tracker_ensure_initialized(void)
 {
-    if (!handlers || !handlers->initialized)
+    if (!handlers)
     {
         ereport(WARNING, (errmsg("table tracker not initialized")));
         return false;
@@ -151,7 +138,7 @@ static bool tracker_validate_table_name(const char *table_name)
         ereport(ERROR,
                 (errcode(ERRCODE_NAME_TOO_LONG),
                  errmsg("table name too long: %s", table_name),
-                 errdetail("Maximum length is %ld characters", config.max_table_name_len)));
+                 errdetail("Maximum length is %d characters", NAMEDATALEN - 1)));
         return false;
     }
 
@@ -161,7 +148,7 @@ static bool tracker_validate_table_name(const char *table_name)
 static void tracker_copy_table_name(char *dest, const char *src)
 {
     memset(dest, 0, NAMEDATALEN);
-    strncpy(dest, src, config.max_table_name_len);
+    strncpy(dest, src, NAMEDATALEN - 1);
 }
 
 static dsa_area *tracker_attach_dsa(void)
