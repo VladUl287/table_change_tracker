@@ -29,7 +29,6 @@ static handlers_t *handlers = NULL;
 
 static uint32 table_name_hash(const void *key, size_t size, void *arg);
 static int table_name_compare(const void *a, const void *b, size_t size, void *arg);
-static size_t dshash_count(dshash_table *ht);
 
 static dshash_parameters dshash_params = {
     .key_size = NAMEDATALEN,
@@ -59,26 +58,10 @@ static int table_name_compare(const void *a, const void *b, size_t size, void *a
     return strncmp(name1, name2, NAMEDATALEN);
 }
 
-static size_t dshash_count(dshash_table *ht)
-{
-    dshash_seq_status status;
-    void *entry;
-    size_t count = 0;
-
-    dshash_seq_init(&status, ht, false);
-
-    while ((entry = dshash_seq_next(&status)) != NULL)
-        count++;
-
-    dshash_seq_term(&status);
-    return count;
-}
-
 Datum dump_hash_table(PG_FUNCTION_ARGS)
 {
     dshash_seq_status status;
     void *entry;
-    size_t count = 0;
     dsa_area *seg;
     dshash_table *table;
 
