@@ -28,7 +28,6 @@ typedef struct
     TimestampTz timestamp;
 } tracker_data_t;
 
-static Oid tracker_get_relation_oid(text *table_name);
 static void tracker_init(void);
 static void tracker_shutdown(void);
 static bool tracker_ensure_initialized(void);
@@ -163,7 +162,6 @@ Datum is_table_tracked(PG_FUNCTION_ARGS)
     dshash_table *table = NULL;
     tracker_data_t *entry;
     dsa_area *seg = NULL;
-    text *table_name;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_BOOL(false);
@@ -171,8 +169,7 @@ Datum is_table_tracked(PG_FUNCTION_ARGS)
     if (!tracker_ensure_initialized())
         PG_RETURN_BOOL(false);
 
-    table_name = PG_GETARG_TEXT_P(0);
-    table_oid = tracker_get_relation_oid(table_name);
+    table_oid = PG_GETARG_OID(0);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
@@ -196,7 +193,6 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
     dshash_table *table = NULL;
     tracker_data_t *entry;
     dsa_area *seg = NULL;
-    text *table_name;
 
     if (PG_ARGISNULL(0))
         ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
@@ -204,8 +200,7 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
     if (!tracker_ensure_initialized())
         PG_RETURN_BOOL(false);
 
-    table_name = PG_GETARG_TEXT_P(0);
-    table_oid = tracker_get_relation_oid(table_name);
+    table_oid = PG_GETARG_OID(0);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
@@ -236,7 +231,6 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
 
     dshash_table *table = NULL;
     dsa_area *seg = NULL;
-    text *table_name;
 
     if (PG_ARGISNULL(0))
         ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
@@ -244,8 +238,7 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
     if (!tracker_ensure_initialized())
         PG_RETURN_BOOL(false);
 
-    table_name = PG_GETARG_TEXT_P(0);
-    table_oid = tracker_get_relation_oid(table_name);
+    table_oid = PG_GETARG_OID(0);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
@@ -393,20 +386,4 @@ void _PG_fini(void)
     tracker_shutdown();
 
     ereport(LOG, (errmsg("Table tracker extension cleaned up")));
-}
-
-static Oid tracker_get_relation_oid(text *table_name)
-{
-    char *table_str = text_to_cstring(table_name);
-    Oid relation_oid = InvalidOid;
-
-    ereport(NOTICE, (errmsg("table_name:: %s", table_str)));
-    relation_oid = RelnameGetRelid(table_str);
-
-    pfree(table_str);
-
-    if (!OidIsValid(relation_oid))
-        ereport(ERROR, (errcode(ERRCODE_UNDEFINED_TABLE), errmsg("table does not exist")));
-
-    return relation_oid;
 }

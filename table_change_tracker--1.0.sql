@@ -10,17 +10,17 @@ RETURNS TIMESTAMP WITH TIME ZONE
 AS 'MODULE_PATHNAME', 'get_last_timestamp_by_oid'
 LANGUAGE C STRICT;
 
-CREATE OR REPLACE FUNCTION enable_table_tracking(table_name TEXT)
+CREATE OR REPLACE FUNCTION enable_table_tracking(table_name regclass)
 RETURNS BOOLEAN
 AS 'MODULE_PATHNAME', 'enable_table_tracking'
 LANGUAGE C STRICT;
 
-CREATE OR REPLACE FUNCTION disable_table_tracking(table_name TEXT)
+CREATE OR REPLACE FUNCTION disable_table_tracking(table_name regclass)
 RETURNS BOOLEAN
 AS 'MODULE_PATHNAME', 'disable_table_tracking'
 LANGUAGE C STRICT;
 
-CREATE OR REPLACE FUNCTION is_table_tracked(table_name TEXT)
+CREATE OR REPLACE FUNCTION is_table_tracked(table_name regclass)
 RETURNS BOOLEAN
 AS 'MODULE_PATHNAME', 'is_table_tracked'
 LANGUAGE C STRICT;
