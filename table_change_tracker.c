@@ -24,31 +24,29 @@ typedef struct
 
 typedef struct
 {
-    char key[NAMEDATALEN];
-    Oid oid;
+    Oid key;
     TimestampTz timestamp;
 } tracker_data_t;
 
+static Oid tracker_get_relation_oid(text *table_name);
 static void tracker_init(void);
 static void tracker_shutdown(void);
 static bool tracker_ensure_initialized(void);
-static bool tracker_validate_table_name(const char *table_name);
 static void tracker_copy_table_name(char *dest, const char *src);
 static dsa_area *tracker_attach_dsa(void);
 static dshash_table *tracker_attach_hash_table(dsa_area *seg);
 static void tracker_detach_all(dshash_table *table, dsa_area *seg);
-static uint32 table_name_hash(const void *key, size_t size, void *arg);
-static int table_name_compare(const void *a, const void *b, size_t size, void *arg);
+static uint32 oid_key_hash(const void *key, size_t size, void *arg);
 
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 
 static handlers_t *handlers = NULL;
 
 static const dshash_parameters dshash_params = {
-    .key_size = NAMEDATALEN,
+    .key_size = sizeof(Oid),
     .entry_size = sizeof(tracker_data_t),
-    .hash_function = table_name_hash,
-    .compare_function = table_name_compare,
+    .hash_function = oid_key_hash,
+    .compare_function = dshash_memcmp,
 };
 
 PG_FUNCTION_INFO_V1(get_last_timestamp);
@@ -56,17 +54,9 @@ PG_FUNCTION_INFO_V1(enable_table_tracking);
 PG_FUNCTION_INFO_V1(disable_table_tracking);
 PG_FUNCTION_INFO_V1(is_table_tracked);
 
-static uint32 table_name_hash(const void *key, size_t size, void *arg)
+static uint32 oid_key_hash(const void *key, size_t size, void *arg)
 {
-    const char *table_name = (const char *)key;
-    return hash_any((const unsigned char *)table_name, strnlen(table_name, NAMEDATALEN));
-}
-
-static int table_name_compare(const void *a, const void *b, size_t size, void *arg)
-{
-    const char *name1 = (const char *)a;
-    const char *name2 = (const char *)b;
-    return strncmp(name1, name2, NAMEDATALEN);
+    return oid_hash(key, size);
 }
 
 static void tracker_init(void)
@@ -125,26 +115,6 @@ static bool tracker_ensure_initialized(void)
     return true;
 }
 
-static bool tracker_validate_table_name(const char *table_name)
-{
-    if (!table_name || strlen(table_name) == 0)
-    {
-        ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null or empty")));
-        return false;
-    }
-
-    if (strlen(table_name) >= NAMEDATALEN)
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_NAME_TOO_LONG),
-                 errmsg("table name too long: %s", table_name),
-                 errdetail("Maximum length is %d characters", NAMEDATALEN - 1)));
-        return false;
-    }
-
-    return true;
-}
-
 static void tracker_copy_table_name(char *dest, const char *src)
 {
     memset(dest, 0, NAMEDATALEN);
@@ -167,12 +137,10 @@ static dsa_area *tracker_attach_dsa(void)
 
 static dshash_table *tracker_attach_hash_table(dsa_area *seg)
 {
-    dshash_table *table = dshash_attach(seg, &dshash_params,
-                                        handlers->table_handle, NULL);
+    dshash_table *table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
+
     if (!table)
-        ereport(ERROR,
-                (errcode(ERRCODE_INTERNAL_ERROR),
-                 errmsg("could not attach to hash table")));
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not attach to hash table")));
 
     return table;
 }
@@ -187,13 +155,13 @@ static void tracker_detach_all(dshash_table *table, dsa_area *seg)
 
 Datum is_table_tracked(PG_FUNCTION_ARGS)
 {
-    text *table_name;
-    char *table_str;
-    char key[NAMEDATALEN];
-    dsa_area *seg = NULL;
+    Oid table_oid = InvalidOid;
+    bool found;
+
     dshash_table *table = NULL;
     tracker_data_t *entry;
-    bool found = false;
+    dsa_area *seg = NULL;
+    text *table_name;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_BOOL(false);
@@ -202,38 +170,31 @@ Datum is_table_tracked(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
 
     table_name = PG_GETARG_TEXT_P(0);
-    table_str = text_to_cstring(table_name);
-
-    if (!tracker_validate_table_name(table_str))
-        PG_RETURN_BOOL(false);
-
-    tracker_copy_table_name(key, table_str);
+    table_oid = tracker_get_relation_oid(table_name);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
 
-    entry = dshash_find(table, key, false);
+    entry = dshash_find(table, &table_oid, false);
     found = (entry != NULL);
 
     if (found)
         dshash_release_lock(table, entry);
 
     tracker_detach_all(table, seg);
-    pfree(table_str);
 
     PG_RETURN_BOOL(found);
 }
 
 Datum enable_table_tracking(PG_FUNCTION_ARGS)
 {
-    text *table_name;
-    char *table_str;
-    char key[NAMEDATALEN];
-    dsa_area *seg = NULL;
+    Oid table_oid = InvalidOid;
+    bool found;
+
     dshash_table *table = NULL;
     tracker_data_t *entry;
-    bool found;
-    Oid relation_oid = InvalidOid;
+    dsa_area *seg = NULL;
+    text *table_name;
 
     if (PG_ARGISNULL(0))
         ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
@@ -242,51 +203,37 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
 
     table_name = PG_GETARG_TEXT_P(0);
-    table_str = text_to_cstring(table_name);
-
-    if (!tracker_validate_table_name(table_str))
-        PG_RETURN_BOOL(false);
-
-    relation_oid = RelnameGetRelid(table_str);
-    if (!OidIsValid(relation_oid))
-        ereport(WARNING, (errmsg("table '%s' does not exist or cannot be accessed", table_str)));
-
-    tracker_copy_table_name(key, table_str);
+    table_oid = tracker_get_relation_oid(table_name);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
 
-    entry = dshash_find_or_insert(table, key, &found);
+    entry = dshash_find_or_insert(table, &table_oid, &found);
     if (!entry)
     {
         tracker_detach_all(table, seg);
-        pfree(table_str);
         PG_RETURN_BOOL(false);
     }
 
     if (!found)
-    {
-        tracker_copy_table_name(entry->key, table_str);
-        entry->oid = relation_oid;
-    }
+        entry->key = table_oid;
 
     entry->timestamp = GetCurrentTimestamp();
 
     dshash_release_lock(table, entry);
     tracker_detach_all(table, seg);
-    pfree(table_str);
 
     PG_RETURN_BOOL(true);
 }
 
 Datum disable_table_tracking(PG_FUNCTION_ARGS)
 {
-    text *table_name;
-    char *table_str;
-    char key[NAMEDATALEN];
-    dsa_area *seg = NULL;
+    Oid table_oid = InvalidOid;
+    bool result;
+
     dshash_table *table = NULL;
-    bool result = false;
+    dsa_area *seg = NULL;
+    text *table_name;
 
     if (PG_ARGISNULL(0))
         ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
@@ -295,33 +242,27 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
         PG_RETURN_BOOL(false);
 
     table_name = PG_GETARG_TEXT_P(0);
-    table_str = text_to_cstring(table_name);
-
-    if (!tracker_validate_table_name(table_str))
-        PG_RETURN_BOOL(false);
-
-    tracker_copy_table_name(key, table_str);
+    table_oid = tracker_get_relation_oid(table_name);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
 
-    result = dshash_delete_key(table, key);
+    result = dshash_delete_key(table, &table_oid);
 
     tracker_detach_all(table, seg);
-    pfree(table_str);
 
     PG_RETURN_BOOL(result);
 }
 
 Datum get_last_timestamp(PG_FUNCTION_ARGS)
 {
+    Oid table_oid = InvalidOid;
     TimestampTz timestamp = 0;
-    text *table_name;
-    char *table_str;
-    char key[NAMEDATALEN];
-    dsa_area *seg = NULL;
+
     dshash_table *table = NULL;
     tracker_data_t *entry;
+    dsa_area *seg = NULL;
+    text *table_name;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
@@ -330,29 +271,23 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
         PG_RETURN_NULL();
 
     table_name = PG_GETARG_TEXT_P(0);
-    table_str = text_to_cstring(table_name);
-
-    if (!tracker_validate_table_name(table_str))
-        PG_RETURN_NULL();
-
-    tracker_copy_table_name(key, table_str);
+    table_oid = tracker_get_relation_oid(table_name);
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
 
-    entry = dshash_find(table, key, false);
+    entry = dshash_find(table, &table_oid, false);
     if (!entry)
     {
         tracker_detach_all(table, seg);
-        pfree(table_str);
         PG_RETURN_NULL();
     }
 
     timestamp = entry->timestamp;
+
     dshash_release_lock(table, entry);
 
     tracker_detach_all(table, seg);
-    pfree(table_str);
 
     PG_RETURN_TIMESTAMP(timestamp);
 }
@@ -391,7 +326,7 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
                     if (entry)
                     {
                         entry->timestamp = GetCurrentTimestamp();
-                        entry->oid = rte->relid;
+                        entry->key = rte->relid;
                         dshash_release_lock(table, entry);
                     }
 
@@ -425,4 +360,25 @@ void _PG_fini(void)
     tracker_shutdown();
 
     ereport(LOG, (errmsg("Table tracker extension cleaned up")));
+}
+
+static Oid tracker_get_relation_oid(text *table_name)
+{
+    char *table_str = text_to_cstring(table_name);
+    Oid relation_oid = InvalidOid;
+
+    relation_oid = RelnameGetRelid(table_str);
+
+    if (!OidIsValid(relation_oid))
+    {
+        Oid namespace_oid = get_namespace_oid(get_namespace_name(get_namespace_oid("$user", true)), false);
+        relation_oid = get_relname_relid(table_str, namespace_oid);
+    }
+
+    pfree(table_str);
+
+    if (!OidIsValid(relation_oid))
+        ereport(ERROR, (errcode(ERRCODE_UNDEFINED_TABLE), errmsg("table \"%s\" does not exist", table_str)));
+
+    return relation_oid;
 }
