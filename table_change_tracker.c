@@ -71,6 +71,11 @@ static size_t dshash_count(dshash_table *ht)
     return count;
 }
 
+Datum enable_table_tracking(PG_FUNCTION_ARGS)
+{
+    PG_RETURN_VOID();
+}
+
 Datum get_last_timestamp(PG_FUNCTION_ARGS)
 {
     TimestampTz timestamp;

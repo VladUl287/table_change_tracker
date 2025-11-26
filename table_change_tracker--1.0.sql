@@ -4,3 +4,8 @@ CREATE OR REPLACE FUNCTION get_last_timestamp(table_name TEXT)
 RETURNS TIMESTAMP WITH TIME ZONE
 AS 'MODULE_PATHNAME', 'get_last_timestamp'
 LANGUAGE C STRICT;
+
+CREATE OR REPLACE FUNCTION enable_table_tracking(table_name TEXT)
+RETURNS void
+AS 'MODULE_PATHNAME', 'enable_table_tracking'
+LANGUAGE C STRICT;
