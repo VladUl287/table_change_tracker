@@ -263,13 +263,10 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     Datum result;
     bool found;
 
-    text *table_name;
-
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
 
-    table_name = PG_GETARG_TEXT_P(0);
-    table_oid = tracker_get_relation_oid(table_name);
+    table_oid = PG_GETARG_OID(0);
 
     result = get_timestamp_internal(table_oid, &found);
     if (!found)
@@ -403,6 +400,7 @@ static Oid tracker_get_relation_oid(text *table_name)
     char *table_str = text_to_cstring(table_name);
     Oid relation_oid = InvalidOid;
 
+    ereport(NOTICE, (errmsg("table_name:: %s", table_str)));
     relation_oid = RelnameGetRelid(table_str);
 
     pfree(table_str);
