@@ -155,7 +155,44 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
 
 Datum disable_table_tracking(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_BOOL(false);
+    dshash_table *table;
+    dsa_area *seg;
+    text *table_name;
+    char *table_str;
+    char key[NAMEDATALEN];
+
+    if (PG_ARGISNULL(0))
+        ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
+
+    if (!handlers || !handlers->area_handle)
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("tracking system not initialized")));
+
+    table_name = PG_GETARG_TEXT_P(0);
+    table_str = text_to_cstring(table_name);
+
+    if (strlen(table_str) >= NAMEDATALEN)
+        ereport(ERROR, (errcode(ERRCODE_NAME_TOO_LONG), errmsg("table name too long")));
+
+    memset(key, 0, NAMEDATALEN);
+    strncpy(key, table_str, NAMEDATALEN - 1);
+
+    seg = dsa_attach(handlers->area_handle);
+    if (!seg)
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not attach to dynamic shared area")));
+
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
+    if (!table)
+    {
+        dsa_detach(seg);
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not attach to hash table")));
+    }
+
+    bool result = dshash_delete_key(table, key);
+
+    dsa_detach(seg);
+    dshash_detach(table);
+
+    PG_RETURN_BOOL(result);
 }
 
 Datum get_last_timestamp(PG_FUNCTION_ARGS)
