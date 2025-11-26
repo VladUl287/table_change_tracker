@@ -200,14 +200,22 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     TimestampTz timestamp;
     text *table_name;
     char *table_str;
-    bool found;
     char key[NAMEDATALEN];
     dshash_table *table;
     dsa_area *seg;
     tracker_data *entry;
 
+    if (PG_ARGISNULL(0))
+        ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
+
+    if (!handlers || !handlers->area_handle)
+        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("tracking system not initialized")));
+
     table_name = PG_GETARG_TEXT_P(0);
     table_str = text_to_cstring(table_name);
+
+    if (strlen(table_str) >= NAMEDATALEN)
+        ereport(ERROR, (errcode(ERRCODE_NAME_TOO_LONG), errmsg("table name too long")));
 
     memset(key, 0, NAMEDATALEN);
     strncpy(key, table_str, NAMEDATALEN - 1);
@@ -215,14 +223,17 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     seg = dsa_attach(handlers->area_handle);
     table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
-    entry = dshash_find_or_insert(table, key, &found);
-    if (!found)
-        entry->timestamp = GetCurrentTimestamp();
+    entry = dshash_find(table, key, false);
+    if (!entry)
+    {
+        dshash_detach(table);
+        dsa_detach(seg);
+        PG_RETURN_NULL();
+    }
+
     timestamp = entry->timestamp;
 
     dshash_release_lock(table, entry);
-
-    pfree(table_str);
 
     dshash_detach(table);
     dsa_detach(seg);
