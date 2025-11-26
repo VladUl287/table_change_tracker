@@ -405,16 +405,10 @@ static Oid tracker_get_relation_oid(text *table_name)
 
     relation_oid = RelnameGetRelid(table_str);
 
-    if (!OidIsValid(relation_oid))
-    {
-        Oid namespace_oid = get_namespace_oid(get_namespace_name(get_namespace_oid("$user", true)), false);
-        relation_oid = get_relname_relid(table_str, namespace_oid);
-    }
-
     pfree(table_str);
 
     if (!OidIsValid(relation_oid))
-        ereport(ERROR, (errcode(ERRCODE_UNDEFINED_TABLE), errmsg("table \"%s\" does not exist", table_str)));
+        ereport(ERROR, (errcode(ERRCODE_UNDEFINED_TABLE), errmsg("table does not exist")));
 
     return relation_oid;
 }
