@@ -31,7 +31,6 @@ typedef struct
 static void tracker_init(void);
 static void tracker_shutdown(void);
 static bool tracker_ensure_initialized(void);
-static void tracker_copy_table_name(char *dest, const char *src);
 static dsa_area *tracker_attach_dsa(void);
 static dshash_table *tracker_attach_hash_table(dsa_area *seg);
 static void tracker_detach_all(dshash_table *table, dsa_area *seg);
@@ -114,12 +113,6 @@ static bool tracker_ensure_initialized(void)
         return false;
     }
     return true;
-}
-
-static void tracker_copy_table_name(char *dest, const char *src)
-{
-    memset(dest, 0, NAMEDATALEN);
-    strncpy(dest, src, NAMEDATALEN - 1);
 }
 
 static dsa_area *tracker_attach_dsa(void)
@@ -332,32 +325,24 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
 
             if (rte->rtekind == RTE_RELATION)
             {
-                char *table_name = get_rel_name(rte->relid);
-                if (table_name)
+                dsa_area *seg = NULL;
+                dshash_table *table = NULL;
+                tracker_data_t *entry;
+
+                if (!tracker_ensure_initialized())
+                    break;
+
+                seg = tracker_attach_dsa();
+                table = tracker_attach_hash_table(seg);
+
+                entry = dshash_find(table, &rte->relid, true);
+                if (entry)
                 {
-                    char key[NAMEDATALEN];
-                    dsa_area *seg = NULL;
-                    dshash_table *table = NULL;
-                    tracker_data_t *entry;
-
-                    if (!tracker_ensure_initialized())
-                        break;
-
-                    tracker_copy_table_name(key, table_name);
-
-                    seg = tracker_attach_dsa();
-                    table = tracker_attach_hash_table(seg);
-
-                    entry = dshash_find(table, key, true);
-                    if (entry)
-                    {
-                        entry->timestamp = GetCurrentTimestamp();
-                        entry->key = rte->relid;
-                        dshash_release_lock(table, entry);
-                    }
-
-                    tracker_detach_all(table, seg);
+                    entry->timestamp = GetCurrentTimestamp();
+                    dshash_release_lock(table, entry);
                 }
+
+                tracker_detach_all(table, seg);
                 break;
             }
         }
