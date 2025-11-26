@@ -42,6 +42,7 @@ void _PG_init(void);
 void _PG_fini(void);
 
 PG_FUNCTION_INFO_V1(get_last_timestamp);
+PG_FUNCTION_INFO_V1(dump_hash_table);
 PG_FUNCTION_INFO_V1(enable_table_tracking);
 PG_FUNCTION_INFO_V1(disable_table_tracking);
 
@@ -71,6 +72,33 @@ static size_t dshash_count(dshash_table *ht)
 
     dshash_seq_term(&status);
     return count;
+}
+
+Datum dump_hash_table(PG_FUNCTION_ARGS)
+{
+    dshash_seq_status status;
+    void *entry;
+    size_t count = 0;
+    dsa_area *seg;
+    dshash_table *table;
+
+    seg = dsa_attach(handlers->area_handle);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
+
+    dshash_seq_init(&status, table, false);
+
+    while ((entry = dshash_seq_next(&status)) != NULL)
+    {
+        tracker_data *data = entry;
+        ereport(NOTICE, (errmsg("dshash_get_num_entries returned: %s", data->key)));
+    }
+
+    dshash_seq_term(&status);
+
+    dshash_detach(table);
+    dsa_detach(seg);
+
+    PG_RETURN_VOID();
 }
 
 Datum enable_table_tracking(PG_FUNCTION_ARGS)
