@@ -76,13 +76,9 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     char *table_str;
     bool found;
     char key[NAMEDATALEN];
-
     dshash_table *table;
     dsa_area *seg;
-    size_t count;
     tracker_data *entry;
-
-    ereport(NOTICE, (errmsg("get_last_timestamp::start")));
 
     table_name = PG_GETARG_TEXT_P(0);
     table_str = text_to_cstring(table_name);
@@ -90,28 +86,13 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     memset(key, 0, NAMEDATALEN);
     strncpy(key, table_str, NAMEDATALEN - 1);
 
-    ereport(NOTICE, (errmsg("get_last_timestamp::key_prepared %s", key)));
-
     seg = dsa_attach(handlers->area_handle);
-
-    ereport(NOTICE, (errmsg("get_last_timestamp::dsa_attached")));
-
     table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
-    ereport(NOTICE, (errmsg("get_last_timestamp::dshash_attached")));
-
-    count = dshash_count(table);
-
-    ereport(NOTICE, (errmsg("get_last_timestamp::count %ld", count)));
-
     entry = dshash_find_or_insert(table, key, &found);
-
     if (!found)
         entry->timestamp = GetCurrentTimestamp();
-
     timestamp = entry->timestamp;
-
-    ereport(NOTICE, (errmsg("get_last_timestamp::inserted found=%d", found)));
 
     dshash_release_lock(table, entry);
 
@@ -119,8 +100,6 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
 
     dshash_detach(table);
     dsa_detach(seg);
-
-    ereport(NOTICE, (errmsg("get_last_timestamp::detached")));
 
     PG_RETURN_TIMESTAMP(timestamp);
 }
@@ -176,7 +155,5 @@ void _PG_init(void)
 
 void _PG_fini(void)
 {
-    // free resources
-
     ExecutorStart_hook = prev_ExecutorStart;
 }
