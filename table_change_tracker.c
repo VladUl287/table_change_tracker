@@ -9,17 +9,28 @@
 #include "utils/timestamp.h"
 #include "utils/lsyscache.h"
 #include "access/tableam.h"
-#include "table_change_tracker.h"
 
 PG_MODULE_MAGIC;
 
-ExecutorStart_hook_type prev_ExecutorStart = NULL;
-handlers_t *handlers = NULL;
+typedef struct
+{
+    dshash_table_handle table_handle;
+    dsa_handle area_handle;
+} handlers_t;
+
+typedef struct
+{
+    char key[NAMEDATALEN];
+    TimestampTz timestamp;
+} tracker_data;
+
+static ExecutorStart_hook_type prev_ExecutorStart = NULL;
+static handlers_t *handlers = NULL;
 
 static uint32 table_name_hash(const void *key, size_t size, void *arg);
 static int table_name_compare(const void *a, const void *b, size_t size, void *arg);
 
-dshash_parameters dshash_params = {
+static dshash_parameters dshash_params = {
     .key_size = NAMEDATALEN,
     .entry_size = sizeof(tracker_data),
     .hash_function = table_name_hash,
