@@ -25,6 +25,17 @@ typedef struct
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static handlers_t *handlers = NULL;
 
+static uint32 table_name_hash(const void *key, size_t size, void *arg);
+static int table_name_compare(const void *a, const void *b, size_t size, void *arg);
+static size_t dshash_count(dshash_table *ht);
+
+static dshash_parameters dshash_params = {
+    .key_size = NAMEDATALEN,
+    .entry_size = sizeof(tracker_data),
+    .hash_function = table_name_hash,
+    .compare_function = table_name_compare,
+};
+
 void _PG_init(void);
 void _PG_fini(void);
 
@@ -66,6 +77,11 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     bool found;
     char key[NAMEDATALEN];
 
+    dshash_table *table;
+    dsa_area *seg;
+    size_t count;
+    tracker_data *entry;
+
     ereport(NOTICE, (errmsg("get_last_timestamp::start")));
 
     table_name = PG_GETARG_TEXT_P(0);
@@ -76,30 +92,22 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
 
     ereport(NOTICE, (errmsg("get_last_timestamp::key_prepared %s", key)));
 
-    dsa_area *seg = dsa_attach(handlers->area_handle);
+    seg = dsa_attach(handlers->area_handle);
 
     ereport(NOTICE, (errmsg("get_last_timestamp::dsa_attached")));
 
-    dshash_parameters params = {
-        .key_size = NAMEDATALEN,
-        .entry_size = sizeof(tracker_data),
-        .hash_function = table_name_hash,
-        .compare_function = table_name_compare,
-    };
-
-    dshash_table *table = dshash_attach(seg, &params, handlers->table_handle, NULL);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     ereport(NOTICE, (errmsg("get_last_timestamp::dshash_attached")));
 
-    size_t count = dshash_count(table);
+    count = dshash_count(table);
 
     ereport(NOTICE, (errmsg("get_last_timestamp::count %ld", count)));
 
-    tracker_data *entry = dshash_find_or_insert(table, key, &found);
+    entry = dshash_find_or_insert(table, key, &found);
+
     if (!found)
-    {
         entry->timestamp = GetCurrentTimestamp();
-    }
 
     timestamp = entry->timestamp;
 
@@ -120,23 +128,20 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
 static void create_hash_table(void)
 {
     bool found;
-    handlers = (handlers_t *)ShmemInitStruct("handlers_t", sizeof(handlers_t), &found);
+    dsa_area *seg;
+    dshash_table *table;
+    dsa_handle area_handle;
+    dshash_table_handle table_handle;
 
+    handlers = (handlers_t *)ShmemInitStruct("handlers_t", sizeof(handlers_t), &found);
     if (found)
         return;
 
-    dsa_area *seg = dsa_create(0);
-    dsa_handle area_handle = dsa_get_handle(seg);
+    seg = dsa_create(0);
+    area_handle = dsa_get_handle(seg);
 
-    dshash_parameters params = {
-        .key_size = NAMEDATALEN,
-        .entry_size = sizeof(tracker_data),
-        .hash_function = table_name_hash,
-        .compare_function = table_name_compare,
-    };
-
-    dshash_table *table = dshash_create(seg, &params, NULL);
-    dshash_table_handle table_handle = dshash_get_hash_table_handle(table);
+    table = dshash_create(seg, &dshash_params, NULL);
+    table_handle = dshash_get_hash_table_handle(table);
 
     dsa_pin(seg);
     dsa_detach(seg);
@@ -152,7 +157,7 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
 
     if (operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE)
     {
-        //update timestamp here
+        // update timestamp here
     }
 
     if (prev_ExecutorStart)
@@ -171,7 +176,7 @@ void _PG_init(void)
 
 void _PG_fini(void)
 {
-    //free resources
+    // free resources
 
     ExecutorStart_hook = prev_ExecutorStart;
 }
