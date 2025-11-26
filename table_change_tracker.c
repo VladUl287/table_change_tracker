@@ -37,6 +37,7 @@ static dsa_area *tracker_attach_dsa(void);
 static dshash_table *tracker_attach_hash_table(dsa_area *seg);
 static void tracker_detach_all(dshash_table *table, dsa_area *seg);
 static uint32 oid_key_hash(const void *key, size_t size, void *arg);
+static Datum get_timestamp_internal(Oid oid, bool *found);
 
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 
@@ -50,6 +51,7 @@ static const dshash_parameters dshash_params = {
 };
 
 PG_FUNCTION_INFO_V1(get_last_timestamp);
+PG_FUNCTION_INFO_V1(get_last_timestamp_by_oid);
 PG_FUNCTION_INFO_V1(enable_table_tracking);
 PG_FUNCTION_INFO_V1(disable_table_tracking);
 PG_FUNCTION_INFO_V1(is_table_tracked);
@@ -257,39 +259,72 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
 Datum get_last_timestamp(PG_FUNCTION_ARGS)
 {
     Oid table_oid = InvalidOid;
-    TimestampTz timestamp = 0;
+    Datum result;
+    bool found;
 
-    dshash_table *table = NULL;
-    tracker_data_t *entry;
-    dsa_area *seg = NULL;
     text *table_name;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
 
-    if (!tracker_ensure_initialized())
-        PG_RETURN_NULL();
-
     table_name = PG_GETARG_TEXT_P(0);
     table_oid = tracker_get_relation_oid(table_name);
+
+    result = get_timestamp_internal(table_oid, &found);
+    if (!found)
+        PG_RETURN_NULL();
+    else
+        PG_RETURN_DATUM(result);
+}
+
+Datum get_last_timestamp_by_oid(PG_FUNCTION_ARGS)
+{
+    Oid table_oid = InvalidOid;
+    Datum result;
+    bool found;
+
+    if (PG_ARGISNULL(0))
+        PG_RETURN_NULL();
+
+    table_oid = PG_GETARG_OID(0);
+
+    result = get_timestamp_internal(table_oid, &found);
+    if (!found)
+        PG_RETURN_NULL();
+    else
+        PG_RETURN_DATUM(result);
+}
+
+static Datum get_timestamp_internal(Oid oid, bool *found)
+{
+    TimestampTz timestamp = 0;
+
+    dsa_area *seg = NULL;
+    dshash_table *table = NULL;
+    tracker_data_t *entry = NULL;
+
+    *found = false;
+
+    if (!tracker_ensure_initialized())
+        return (Datum)0;
 
     seg = tracker_attach_dsa();
     table = tracker_attach_hash_table(seg);
 
-    entry = dshash_find(table, &table_oid, false);
+    entry = dshash_find(table, &oid, false);
     if (!entry)
     {
         tracker_detach_all(table, seg);
-        PG_RETURN_NULL();
+        return (Datum)0;
     }
 
+    *found = true;
+
     timestamp = entry->timestamp;
-
     dshash_release_lock(table, entry);
-
     tracker_detach_all(table, seg);
 
-    PG_RETURN_TIMESTAMP(timestamp);
+    return TimestampTzGetDatum(timestamp);
 }
 
 static void track_executor_start(QueryDesc *queryDesc, int eflags)
