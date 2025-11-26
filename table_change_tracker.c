@@ -7,6 +7,8 @@
 #include "lib/dshash.h"
 #include "access/hash.h"
 #include "utils/timestamp.h"
+#include "utils/lsyscache.h"
+#include "access/tableam.h"
 
 PG_MODULE_MAGIC;
 
@@ -133,10 +135,46 @@ static void create_hash_table(void)
 static void track_executor_start(QueryDesc *queryDesc, int eflags)
 {
     CmdType operation = queryDesc->operation;
+    EState *estate;
+    dsa_area *seg;
+    dshash_table *table;
+    tracker_data *entry;
+    char key[NAMEDATALEN];
 
     if (operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE)
     {
-        // update timestamp here
+        if (queryDesc->plannedstmt != NULL && queryDesc->plannedstmt->rtable != NIL)
+        {
+            ListCell *lc;
+            foreach (lc, queryDesc->plannedstmt->rtable)
+            {
+                RangeTblEntry *rte = (RangeTblEntry *)lfirst(lc);
+
+                if (rte->rtekind == RTE_RELATION)
+                {
+                    char *table_name = get_rel_name(rte->relid);
+
+                    memset(key, 0, NAMEDATALEN);
+                    strncpy(key, table_name, NAMEDATALEN - 1);
+
+                    seg = dsa_attach(handlers->area_handle);
+                    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
+
+                    entry = dshash_find(table, key, true);
+                    if (entry)
+                    {
+                        memset(entry->key, 0, NAMEDATALEN);
+                        strncpy(entry->key, table_name, NAMEDATALEN - 1);
+                        entry->timestamp = GetCurrentTimestamp();
+                        dshash_release_lock(table, entry);
+                    }
+
+                    dshash_detach(table);
+                    dsa_detach(seg);
+                    break;
+                }
+            }
+        }
     }
 
     if (prev_ExecutorStart)
