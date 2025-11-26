@@ -43,7 +43,7 @@ static int table_name_compare(const void *a, const void *b, size_t size, void *a
     return strncmp(name1, name2, NAMEDATALEN);
 }
 
-size_t dshash_count(dshash_table *ht)
+static size_t dshash_count(dshash_table *ht)
 {
     dshash_seq_status status;
     void *entry;
