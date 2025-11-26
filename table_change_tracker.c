@@ -218,9 +218,10 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
     }
 
     if (!found)
+    {
         entry->key = table_oid;
-
-    entry->timestamp = GetCurrentTimestamp();
+        entry->timestamp = GetCurrentTimestamp();
+    }
 
     dshash_release_lock(table, entry);
     tracker_detach_all(table, seg);
