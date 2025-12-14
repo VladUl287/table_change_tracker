@@ -53,6 +53,7 @@ PG_FUNCTION_INFO_V1(get_last_timestamp_by_oid);
 PG_FUNCTION_INFO_V1(enable_table_tracking);
 PG_FUNCTION_INFO_V1(disable_table_tracking);
 PG_FUNCTION_INFO_V1(is_table_tracked);
+PG_FUNCTION_INFO_V1(set_last_timestamp);
 
 static uint32 oid_key_hash(const void *key, size_t size, void *arg)
 {
@@ -259,6 +260,47 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
         PG_RETURN_NULL();
     else
         PG_RETURN_DATUM(result);
+}
+
+Datum set_last_timestamp(PG_FUNCTION_ARGS)
+{
+    Oid table_oid = InvalidOid;
+    TimestampTz last_timestamp;
+    bool found = false;
+
+    dsa_area *seg = NULL;
+    dshash_table *table = NULL;
+    tracker_data_t *entry = NULL;
+
+    if (PG_ARGISNULL(0))
+        PG_RETURN_BOOL(false);
+
+    if (!tracker_ensure_initialized())
+        PG_RETURN_BOOL(false);
+
+    table_oid = PG_GETARG_OID(0);
+    last_timestamp = PG_GETARG_TIMESTAMPTZ(1);
+
+    seg = tracker_attach_dsa();
+    table = tracker_attach_hash_table(seg);
+
+    entry = dshash_find(table, &table_oid, false);
+    if (entry)
+    {
+        dshash_release_lock(table, entry);
+
+        entry = dshash_find(table, &table_oid, true);
+
+        if (entry)
+        {
+            entry->timestamp = last_timestamp;
+            dshash_release_lock(table, entry);
+            found = true;
+        }
+    }
+
+    tracker_detach_all(table, seg);
+    PG_RETURN_BOOL(found);
 }
 
 Datum get_last_timestamp_by_oid(PG_FUNCTION_ARGS)

@@ -5,6 +5,11 @@ RETURNS TIMESTAMP WITH TIME ZONE
 AS 'MODULE_PATHNAME', 'get_last_timestamp'
 LANGUAGE C STRICT;
 
+CREATE OR REPLACE FUNCTION set_last_timestamp(table_name regclass, last_timestamp timestamp with time zone)
+RETURNS BOOLEAN
+AS 'MODULE_PATHNAME', 'set_last_timestamp'
+LANGUAGE C STRICT;
+
 CREATE OR REPLACE FUNCTION get_last_timestamp_by_oid(table_oid OID)
 RETURNS TIMESTAMP WITH TIME ZONE
 AS 'MODULE_PATHNAME', 'get_last_timestamp_by_oid'
