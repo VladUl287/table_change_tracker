@@ -48,7 +48,6 @@ static const dshash_parameters dshash_params = {
 };
 
 PG_FUNCTION_INFO_V1(get_last_timestamp);
-PG_FUNCTION_INFO_V1(get_last_timestamp_by_oid);
 PG_FUNCTION_INFO_V1(enable_table_tracking);
 PG_FUNCTION_INFO_V1(disable_table_tracking);
 PG_FUNCTION_INFO_V1(is_table_tracked);
