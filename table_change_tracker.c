@@ -33,7 +33,6 @@ static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 
 static void tracker_init(void);
 static void tracker_shutdown(void);
-static bool tracker_ensure_initialized(void);
 static dsa_area *tracker_attach_dsa(void);
 static dshash_table *tracker_attach_hash_table(dsa_area *seg);
 static void tracker_detach_all(dshash_table *table, dsa_area *seg);
@@ -58,22 +57,9 @@ static uint32 oid_key_hash(const void *key, size_t size, void *arg)
     return oid_hash(key, size);
 }
 
-static bool tracker_ensure_initialized(void)
-{
-    if (!handlers)
-    {
-        ereport(WARNING, (errmsg("table tracker not initialized")));
-        return false;
-    }
-    return true;
-}
-
 static dsa_area *tracker_attach_dsa(void)
 {
     dsa_area *seg;
-
-    if (!tracker_ensure_initialized())
-        return NULL;
 
     seg = dsa_attach(handlers->area_handle);
     if (!seg)
@@ -112,9 +98,6 @@ Datum is_table_tracked(PG_FUNCTION_ARGS)
     if (PG_ARGISNULL(0))
         PG_RETURN_BOOL(false);
 
-    if (!tracker_ensure_initialized())
-        PG_RETURN_BOOL(false);
-
     table_oid = PG_GETARG_OID(0);
 
     seg = tracker_attach_dsa();
@@ -142,9 +125,6 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
 
     if (PG_ARGISNULL(0))
         ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
-
-    if (!tracker_ensure_initialized())
-        PG_RETURN_BOOL(false);
 
     table_oid = PG_GETARG_OID(0);
 
@@ -181,9 +161,6 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
     if (PG_ARGISNULL(0))
         ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("table name cannot be null")));
 
-    if (!tracker_ensure_initialized())
-        PG_RETURN_BOOL(false);
-
     table_oid = PG_GETARG_OID(0);
 
     seg = tracker_attach_dsa();
@@ -206,9 +183,6 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     tracker_entity *entry = NULL;
 
     if (PG_ARGISNULL(0))
-        PG_RETURN_NULL();
-
-    if (!tracker_ensure_initialized())
         PG_RETURN_NULL();
 
     table_oid = PG_GETARG_OID(0);
@@ -243,9 +217,6 @@ Datum get_last_timestamps(PG_FUNCTION_ARGS)
     bool *result_nulls;
 
     if (PG_ARGISNULL(0))
-        PG_RETURN_NULL();
-
-    if (!tracker_ensure_initialized())
         PG_RETURN_NULL();
 
     input_array = PG_GETARG_ARRAYTYPE_P(0);
@@ -306,9 +277,6 @@ Datum set_last_timestamp(PG_FUNCTION_ARGS)
     if (PG_ARGISNULL(0))
         PG_RETURN_BOOL(false);
 
-    if (!tracker_ensure_initialized())
-        PG_RETURN_BOOL(false);
-
     table_oid = PG_GETARG_OID(0);
     last_timestamp = PG_GETARG_TIMESTAMPTZ(1);
 
@@ -353,9 +321,6 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
                 dshash_table *table = NULL;
                 tracker_entity *entry;
 
-                if (!tracker_ensure_initialized())
-                    break;
-
                 seg = tracker_attach_dsa();
                 table = tracker_attach_hash_table(seg);
 
@@ -387,9 +352,7 @@ static void tracker_init(void)
     handlers = (shared_handlers *)ShmemInitStruct("table_tracker_handlers", sizeof(shared_handlers), &found);
 
     if (found)
-    {
         return;
-    }
 
     memset(handlers, 0, sizeof(shared_handlers));
 
