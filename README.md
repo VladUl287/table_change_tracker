@@ -51,10 +51,10 @@ enable_table_tracking(table_name regclass)
 
 Disables tracking for the specified table. Returns true if tracking was successfully disabled.
 ```
-Checks whether a table is currently being tracked. Returns true if the table is tracked.
 disable_table_tracking(table_name regclass)
 ```
 
+Checks whether a table is currently being tracked. Returns true if the table is tracked.
 ```
 is_table_tracked(table_name regclass)
 ```
