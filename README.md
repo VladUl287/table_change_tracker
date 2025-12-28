@@ -1,12 +1,2 @@
-<!-- Build WSL -->
-cd /mnt/host/c/Users/User/source/repos/cpgext/
-make
-
-<!-- Run wsl -->
-wsl -d Debian
-
-<!-- VS code manual extension installation  -->
-code --install-extension path/extension/name.vsix
-
-<!-- Copy to Docker -->
-docker cp table_change_tracker.so vibrant_murdock:/usr/lib/postgresql/16/lib/ && docker cp table_change_tracker.control vibrant_murdock:/usr/share/postgresql/16/extension/ && docker cp table_change_tracker--1.0.sql vibrant_murdock:/usr/share/postgresql/16/extension/
+Table Change Tracker - PostgreSQL Extension
+A PostgreSQL extension that tracks the last modification timestamp of tables by hooking into the query executor. This extension uses shared memory to store timestamps across all database sessions and automatically updates timestamps on INSERT, UPDATE, and DELETE operations.
