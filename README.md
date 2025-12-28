@@ -1,31 +1,43 @@
-Table Change Tracker Extension
+# Table Change Tracker Extension
+
 A lightweight PostgreSQL extension that helps monitor when tables are last modified by INSERT, UPDATE, or DELETE operations.
 
-Overview
+## Overview
 This extension provides a simple mechanism to track the most recent modification timestamp for selected tables in your database. It's designed to be efficient and unobtrusive, using shared memory structures to minimize performance impact.
 
-Features
-Automatic Tracking: Automatically updates timestamps when tracked tables are modified
+## Features
+- **Automatic Tracking**: Automatically updates timestamps when tracked tables are modified
 
-Selective Monitoring: Choose which tables to monitor and which to ignore
+- **Selective Monitoring**: Choose which tables to monitor and which to ignore
 
-Bulk Operations: Get timestamps for multiple tables at once
+- **Bulk Operations**: Get timestamps for multiple tables at once
 
-Manual Control: Optionally set timestamps manually when needed
+- **Manual Control**: Optionally set timestamps manually when needed
 
-Low Overhead: Uses dynamic shared memory for efficient operation
+- **Low Overhead**: Uses dynamic shared memory
 
-Installation
+## Installation
 Build the extension:
 
-bash
+```bash
 make
 sudo make install
-Enable in your database:
 
-sql
+Enable in your database:
 CREATE EXTENSION table_change_tracker;
-Functions
+```
+
+## Configuration
+This extension requires access to PostgreSQL shared memory. Add the following to your postgresql.conf file:
+```shared_preload_libraries = 'table_change_tracker'```
+
+After modifying the configuration, restart PostgreSQL:
+```
+sudo systemctl restart postgresql   # For systemd systems
+pg_ctl restart                     # For manual installations
+```
+
+## Functions
 enable_table_tracking(table_name regclass)
 Enables tracking for the specified table. Returns true on success.
 
