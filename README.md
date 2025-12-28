@@ -22,8 +22,11 @@ Build the extension:
 ```bash
 make
 sudo make install
+```
 
 Enable in your database:
+
+```
 CREATE EXTENSION table_change_tracker;
 ```
 
