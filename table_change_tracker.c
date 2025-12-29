@@ -487,26 +487,16 @@ void _PG_init(void)
              errcontext("Extension _PG_init completion")));
 }
 
-static void tracker_shutdown(void)
-{
-    if (handlers)
-    {
-        dsa_area *seg = dsa_attach(handlers->area_handle);
-        if (seg)
-        {
-            dsa_unpin(seg);
-            dsa_detach(seg);
-        }
-    }
-}
-
 void _PG_fini(void)
 {
-    tracker_shutdown();
+    ereport(LOG, (errmsg("table tracker: starting extension cleanup")));
 
     ExecutorStart_hook = prev_ExecutorStart;
     shmem_request_hook = prev_shmem_request_hook;
     shmem_startup_hook = prev_shmem_startup_hook;
 
-    ereport(LOG, (errmsg("Table tracker extension cleaned up")));
+    ereport(LOG,
+            (errmsg("table tracker: extension unloaded successfully"),
+             errdetail("Hooks uninstalled"),
+             errcontext("Extension _PG_fini completion")));
 }
