@@ -148,7 +148,7 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
     table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     result = dshash_delete_key(table, &table_oid);
-
+    
     tracker_detach_all(table, seg);
 
     PG_RETURN_BOOL(result);
@@ -284,18 +284,19 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
         (queryDesc->plannedstmt && queryDesc->plannedstmt->rtable))
     {
         ListCell *lc;
+        dsa_area *seg = NULL;
+        dshash_table *table = NULL;
+
+        seg = dsa_attach(handlers->area_handle);
+        table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
+
         foreach (lc, queryDesc->plannedstmt->rtable)
         {
             RangeTblEntry *rte = (RangeTblEntry *)lfirst(lc);
 
             if (rte->rtekind == RTE_RELATION)
             {
-                dsa_area *seg = NULL;
-                dshash_table *table = NULL;
                 tracker_entity *entry;
-
-                seg = dsa_attach(handlers->area_handle);
-                table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
                 entry = dshash_find(table, &rte->relid, true);
                 if (entry)
