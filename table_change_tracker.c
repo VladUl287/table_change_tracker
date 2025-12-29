@@ -38,7 +38,6 @@ static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 static void tracker_shutdown(void);
-static dshash_table *tracker_attach_hash_table(dsa_area *seg);
 static void tracker_detach_all(dshash_table *table, dsa_area *seg);
 static uint32 oid_key_hash(const void *key, size_t size, void *arg);
 
@@ -59,16 +58,6 @@ PG_FUNCTION_INFO_V1(get_last_timestamps);
 static uint32 oid_key_hash(const void *key, size_t size, void *arg)
 {
     return oid_hash(key, size);
-}
-
-static dshash_table *tracker_attach_hash_table(dsa_area *seg)
-{
-    dshash_table *table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
-
-    if (!table)
-        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not attach to hash table")));
-
-    return table;
 }
 
 static void tracker_detach_all(dshash_table *table, dsa_area *seg)
@@ -94,7 +83,7 @@ Datum is_table_tracked(PG_FUNCTION_ARGS)
     table_oid = PG_GETARG_OID(0);
 
     seg = dsa_attach(handlers->area_handle);
-    table = tracker_attach_hash_table(seg);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     entry = dshash_find(table, &table_oid, false);
     found = (entry != NULL);
@@ -122,7 +111,7 @@ Datum enable_table_tracking(PG_FUNCTION_ARGS)
     table_oid = PG_GETARG_OID(0);
 
     seg = dsa_attach(handlers->area_handle);
-    table = tracker_attach_hash_table(seg);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     entry = dshash_find_or_insert(table, &table_oid, &found);
     if (!entry)
@@ -157,7 +146,7 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
     table_oid = PG_GETARG_OID(0);
 
     seg = dsa_attach(handlers->area_handle);
-    table = tracker_attach_hash_table(seg);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     result = dshash_delete_key(table, &table_oid);
 
@@ -181,7 +170,7 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     table_oid = PG_GETARG_OID(0);
 
     seg = dsa_attach(handlers->area_handle);
-    table = tracker_attach_hash_table(seg);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     entry = dshash_find(table, &table_oid, false);
     if (!entry)
@@ -221,7 +210,7 @@ Datum get_last_timestamps(PG_FUNCTION_ARGS)
     result_nulls = palloc(sizeof(bool) * num_tables);
 
     seg = dsa_attach(handlers->area_handle);
-    table = tracker_attach_hash_table(seg);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     for (int i = 0; i < num_tables; i++)
     {
@@ -274,7 +263,7 @@ Datum set_last_timestamp(PG_FUNCTION_ARGS)
     last_timestamp = PG_GETARG_TIMESTAMPTZ(1);
 
     seg = dsa_attach(handlers->area_handle);
-    table = tracker_attach_hash_table(seg);
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     entry = dshash_find(table, &table_oid, false);
 
@@ -315,7 +304,7 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
                 tracker_entity *entry;
 
                 seg = dsa_attach(handlers->area_handle);
-                table = tracker_attach_hash_table(seg);
+                table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
                 entry = dshash_find(table, &rte->relid, true);
                 if (entry)
