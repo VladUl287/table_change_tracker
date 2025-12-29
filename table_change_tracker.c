@@ -264,20 +264,12 @@ Datum set_last_timestamp(PG_FUNCTION_ARGS)
     seg = dsa_attach(handlers->area_handle);
     table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
-    entry = dshash_find(table, &table_oid, false);
-
+    entry = dshash_find(table, &table_oid, true);
     if (entry)
     {
+        entry->timestamp = last_timestamp;
         dshash_release_lock(table, entry);
-
-        entry = dshash_find(table, &table_oid, true);
-
-        if (entry)
-        {
-            entry->timestamp = last_timestamp;
-            dshash_release_lock(table, entry);
-            found = true;
-        }
+        found = true;
     }
 
     tracker_detach_all(table, seg);
