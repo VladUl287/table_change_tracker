@@ -11,8 +11,12 @@
 #include "access/tableam.h"
 #include "utils/memutils.h"
 #include "catalog/namespace.h"
+#include "storage/ipc.h"
+#include "miscadmin.h"
 
 #define DSA_TRANCHE_APP 1
+#define TABLE_TRACKER_DSA_SIZE sizeof(shared_handlers)
+#define TABLE_TRACKER_HANDLERS "table_tracker_handlers"
 
 PG_MODULE_MAGIC;
 
@@ -30,6 +34,8 @@ typedef struct
 
 static shared_handlers *handlers = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 static void tracker_init(void);
 static void tracker_shutdown(void);
@@ -343,49 +349,166 @@ static void track_executor_start(QueryDesc *queryDesc, int eflags)
         standard_ExecutorStart(queryDesc, eflags);
 }
 
-static void tracker_init(void)
+static void tracker_shmem_request(void)
+{
+    if (prev_shmem_request_hook)
+        prev_shmem_request_hook();
+
+    ereport(DEBUG1,
+            (errmsg("table tracker: requesting shared memory resources"),
+             errdetail("Memory: %zu bytes", TABLE_TRACKER_DSA_SIZE)));
+
+    RequestAddinShmemSpace(sizeof(shared_handlers));
+
+    ereport(DEBUG2,
+            (errmsg("table tracker: shared memory request registered"),
+             errdetail("Size: %zu bytes", TABLE_TRACKER_DSA_SIZE)));
+
+    ereport(LOG,
+            (errmsg("table tracker: memory request phase completed"),
+             errcontext("shmem_request_hook execution")));
+}
+
+static void tracker_shmem_startup(void)
 {
     bool found;
     dsa_area *seg = NULL;
     dshash_table *table = NULL;
 
-    handlers = (shared_handlers *)ShmemInitStruct("table_tracker_handlers", sizeof(shared_handlers), &found);
+    if (prev_shmem_startup_hook)
+        prev_shmem_startup_hook();
+
+    ereport(DEBUG1,
+            (errmsg("table tracker: starting shared memory initialization"),
+             errcontext("shmem_startup_hook execution")));
+
+    LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+
+    handlers = (shared_handlers *)ShmemInitStruct(
+        TABLE_TRACKER_HANDLERS,
+        sizeof(shared_handlers),
+        &found);
 
     if (found)
+    {
+        ereport(DEBUG2,
+                (errmsg("table tracker: reusing existing shared memory"),
+                 errdetail("Handlers already initialized by another process")));
+        LWLockRelease(AddinShmemInitLock);
         return;
+    }
+
+    ereport(LOG,
+            (errmsg("table tracker: performing first-time initialization"),
+             errdetail("Process ID: %d", MyProcPid)));
 
     memset(handlers, 0, sizeof(shared_handlers));
+
+    ereport(DEBUG2, (errmsg("table tracker: creating DSA")));
 
     seg = dsa_create(DSA_TRANCHE_APP);
     if (!seg)
     {
-        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create dynamic shared area")));
+        LWLockRelease(AddinShmemInitLock);
+        ereport(ERROR,
+                (errcode(ERRCODE_OUT_OF_MEMORY),
+                 errmsg("table tracker: failed to create Dynamic Shared Area"),
+                 errdetail("DSA creation failed. System may be out of shared memory."),
+                 errhint("Increase max_dsa_size or reduce other shared memory usage."),
+                 errcontext("DSA initialization phase")));
+        return;
     }
+
+    ereport(DEBUG2, (errmsg("table tracker: creating hash table")));
 
     table = dshash_create(seg, &dshash_params, NULL);
     if (!table)
     {
-        dsa_detach(seg);
-        ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("could not create hash table")));
+        tracker_detach_all(table, seg);
+        LWLockRelease(AddinShmemInitLock);
+        ereport(ERROR,
+                (errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+                 errmsg("table tracker: failed to create distributed hash table"),
+                 errdetail("Hash table creation within DSA failed"),
+                 errhint("DSA might be fragmented. Consider increasing max_dsa_size."),
+                 errcontext("Hash table initialization phase")));
+        return;
     }
 
     handlers->area_handle = dsa_get_handle(seg);
+    if (handlers->area_handle == DSA_HANDLE_INVALID)
+    {
+        LWLockRelease(AddinShmemInitLock);
+        ereport(WARNING,
+                (errcode(ERRCODE_INTERNAL_ERROR),
+                 errmsg("table tracker: invalid DSA handle obtained"),
+                 errdetail("DSA handle validation failed"),
+                 errhint("DSA might have been corrupted during creation")));
+        return;
+    }
+
     handlers->table_handle = dshash_get_hash_table_handle(table);
+    if (handlers->table_handle == DSHASH_HANDLE_INVALID)
+    {
+        LWLockRelease(AddinShmemInitLock);
+        ereport(WARNING,
+                (errcode(ERRCODE_INTERNAL_ERROR),
+                 errmsg("table tracker: invalid hash table handle obtained"),
+                 errdetail("Hash table handle validation failed")));
+        return;
+    }
 
     dsa_pin(seg);
     dsa_pin_mapping(seg);
 
+    ereport(DEBUG2,
+            (errmsg("table tracker: DSA pinned for persistence"),
+             errdetail("Segment will remain allocated across backend lifetimes")));
+
+    ereport(LOG,
+            (errmsg("table tracker: initialization completed successfully"),
+             errdetail("DSA handle: valid, Hash table: ready, Lock: acquired"),
+             errcontext("First-time shared memory setup")));
+
     tracker_detach_all(table, seg);
+
+    LWLockRelease(AddinShmemInitLock);
+
+    ereport(LOG,
+            (errmsg("table tracker: shared memory startup completed"),
+             errdetail("Ready for table tracking operations"),
+             errcontext("Extension ready state")));
 }
 
 void _PG_init(void)
 {
-    tracker_init();
+    ereport(LOG,
+            (errmsg("table tracker: loading extension"),
+             errdetail("Version: 1.0, PostgreSQL: %s", PG_VERSION_STR),
+             errcontext("Extension load phase")));
+
+    prev_shmem_request_hook = shmem_request_hook;
+    shmem_request_hook = tracker_shmem_request;
+
+    prev_shmem_startup_hook = shmem_startup_hook;
+    shmem_startup_hook = tracker_shmem_startup;
+
+    ereport(DEBUG1,
+            (errmsg("table tracker: memory hooks registered"),
+             errdetail("shmem_request: %p, shmem_startup: %p",
+                       tracker_shmem_request, tracker_shmem_startup)));
 
     prev_ExecutorStart = ExecutorStart_hook;
     ExecutorStart_hook = track_executor_start;
 
-    ereport(LOG, (errmsg("Table tracker extension initialized")));
+    ereport(DEBUG1,
+            (errmsg("table tracker: executor hook registered"),
+             errdetail("Hook function: %p", track_executor_start)));
+
+    ereport(LOG,
+            (errmsg("table tracker: extension loaded successfully"),
+             errdetail("Hooks installed, ready for initialization"),
+             errcontext("Extension _PG_init completion")));
 }
 
 static void tracker_shutdown(void)
@@ -406,6 +529,8 @@ void _PG_fini(void)
     tracker_shutdown();
 
     ExecutorStart_hook = prev_ExecutorStart;
+    shmem_request_hook = prev_shmem_request_hook;
+    shmem_startup_hook = prev_shmem_startup_hook;
 
     ereport(LOG, (errmsg("Table tracker extension cleaned up")));
 }
