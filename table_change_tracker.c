@@ -37,7 +37,6 @@ static ExecutorStart_hook_type prev_ExecutorStart = NULL;
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
-static void tracker_shutdown(void);
 static void tracker_detach_all(dshash_table *table, dsa_area *seg);
 static uint32 oid_key_hash(const void *key, size_t size, void *arg);
 
