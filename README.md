@@ -2,23 +2,23 @@
 
 A lightweight PostgreSQL extension that helps monitor when tables are last modified by INSERT, UPDATE, or DELETE operations.
 
-## Overview
+## 📋 Overview
 
 This extension provides a simple mechanism to track the most recent modification timestamp for selected tables in your database. It's designed to be efficient and unobtrusive, using shared memory structures to minimize performance impact.
 
-## Features
+## ✨ Features
 
-- **Automatic Tracking**: Automatically updates timestamps when tracked tables are modified
+- **🔄 Automatic Tracking**: Automatically updates timestamps when tracked tables are modified
 
-- **Selective Monitoring**: Choose which tables to monitor and which to ignore
+- **🎯 Selective Monitoring**: Choose which tables to monitor and which to ignore
 
-- **Bulk Operations**: Get timestamps for multiple tables at once
+- **⚡ Bulk Operations**: Get timestamps for multiple tables at once
 
-- **Manual Control**: Optionally set timestamps manually when needed
+- **📊 Manual Control**: Optionally set timestamps manually when needed
 
-- **Low Overhead**: Uses dynamic shared memory
+- **🛠️ Low Overhead**: Uses dynamic shared memory
 
-## Installation
+## 🚀 Installation
 
 ### 1. Build the extension
 
@@ -51,7 +51,7 @@ sudo systemctl restart postgresql   # For systemd systems
 pg_ctl restart                     # For manual installations
 ```
 
-## Functions
+## 🔧 Functions
 
 Enables tracking for the specified table. Returns true on success.
 
@@ -89,7 +89,7 @@ Manually sets the last modification timestamp for a table. Returns true if the t
 set_last_timestamp(table_name regclass, last_timestamp timestamptz)
 ```
 
-## Usage Example
+## 💡 Usage Example
 
 ```sql
 -- Enable tracking for specific tables
@@ -122,13 +122,13 @@ SELECT set_last_timestamp('public.users', NOW());
 SELECT disable_table_tracking('public.orders');
 ```
 
-## How It Works
+## ⚙️ How It Works
 
 The extension hooks into PostgreSQL's query execution process to detect when INSERT, UPDATE, or DELETE
 operations occur on tracked tables. When such an operation is detected,
 it updates the corresponding timestamp in a shared memory hash table.
 
-## Limitations
+## ⚠️ Limitations
 
 - Only tracks DML operations (INSERT, UPDATE, DELETE)
 - Does not track DDL operations (ALTER TABLE, TRUNCATE, etc.)
@@ -141,12 +141,12 @@ The extension is designed to have minimal performance impact:
 
 Only incurs overhead for tracked tables
 
-## Requirements
+## 📋 Requirements
 
 - **PostgreSQL**: Version 12 or later
 - **Permissions**: Superuser or appropriate extension privileges
 - **Memory**: Sufficient shared memory for tracked tables
 
-## License
+## 📄 License
 
 This extension is released under the MIT License. See the [LICENSE](LICENSE) file for details.
