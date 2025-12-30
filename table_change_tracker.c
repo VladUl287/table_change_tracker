@@ -148,7 +148,7 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
     table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
     result = dshash_delete_key(table, &table_oid);
-    
+
     tracker_detach_all(table, seg);
 
     PG_RETURN_BOOL(result);
@@ -278,43 +278,70 @@ Datum set_last_timestamp(PG_FUNCTION_ARGS)
 
 static void track_executor_start(QueryDesc *queryDesc, int eflags)
 {
-    CmdType operation = queryDesc->operation;
-
-    if ((operation == CMD_INSERT || operation == CMD_UPDATE || operation == CMD_DELETE) &&
-        (queryDesc->plannedstmt && queryDesc->plannedstmt->rtable))
-    {
-        ListCell *lc;
-        dsa_area *seg = NULL;
-        dshash_table *table = NULL;
-
-        seg = dsa_attach(handlers->area_handle);
-        table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
-
-        foreach (lc, queryDesc->plannedstmt->rtable)
-        {
-            RangeTblEntry *rte = (RangeTblEntry *)lfirst(lc);
-
-            if (rte->rtekind == RTE_RELATION)
-            {
-                tracker_entity *entry;
-
-                entry = dshash_find(table, &rte->relid, true);
-                if (entry)
-                {
-                    entry->timestamp = GetCurrentTimestamp();
-                    dshash_release_lock(table, entry);
-                }
-
-                tracker_detach_all(table, seg);
-                break;
-            }
-        }
-    }
+    PlannedStmt *plannedstmt;
+    CmdType cmdType;
+    dsa_area *seg;
+    dshash_table *table;
+    ListCell *lc;
 
     if (prev_ExecutorStart)
         prev_ExecutorStart(queryDesc, eflags);
     else
         standard_ExecutorStart(queryDesc, eflags);
+
+    if (!handlers)
+        return;
+
+    plannedstmt = queryDesc->plannedstmt;
+    if (!plannedstmt)
+        return;
+
+    cmdType = plannedstmt->commandType;
+    if (cmdType != CMD_INSERT && cmdType != CMD_UPDATE && cmdType != CMD_DELETE)
+        return;
+
+    if (!plannedstmt->resultRelations)
+        return;
+
+    seg = dsa_attach(handlers->area_handle);
+    if (!seg)
+        return;
+
+    table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
+    if (!table)
+    {
+        dsa_detach(seg);
+        return;
+    }
+
+    foreach (lc, plannedstmt->resultRelations)
+    {
+        Oid table_oid;
+        RangeTblEntry *rte;
+        tracker_entity *entry;
+
+        int rtindex = lfirst_int(lc);
+
+        if (rtindex < 1 || rtindex > list_length(plannedstmt->rtable))
+            continue;
+
+        rte = (RangeTblEntry *)list_nth(plannedstmt->rtable, rtindex - 1);
+
+        if (rte->rtekind != RTE_RELATION)
+            continue;
+
+        table_oid = rte->relid;
+        entry = dshash_find(table, &table_oid, true);
+
+        if (entry)
+        {
+            entry->timestamp = GetCurrentTimestamp();
+            dshash_release_lock(table, entry);
+        }
+    }
+
+    dshash_detach(table);
+    dsa_detach(seg);
 }
 
 static void tracker_shmem_request(void)
