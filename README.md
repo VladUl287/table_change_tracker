@@ -127,22 +127,16 @@ it updates the corresponding timestamp in a shared memory hash table.
 
 ## Limitations
 
-Only tracks DML operations (INSERT, UPDATE, DELETE)
+- Only tracks DML operations (INSERT, UPDATE, DELETE)
+- Does not track DDL operations (ALTER TABLE, TRUNCATE, etc.)
+- Timestamps are stored in shared memory and will be lost on server restart
+- Requires appropriate permissions to install and use
 
-Does not track DDL operations (ALTER TABLE, TRUNCATE, etc.)
+**Performance Considerations:**
 
-Timestamps are stored in shared memory and will be lost on server restart
-
-Requires appropriate permissions to install and use
-
-Performance Considerations
 The extension is designed to have minimal performance impact:
 
-Uses efficient hash table lookups
-
 Only incurs overhead for tracked tables
-
-Automatically cleans up resources when not in use
 
 ## Requirements
 
