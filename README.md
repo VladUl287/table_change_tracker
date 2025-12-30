@@ -20,28 +20,31 @@ This extension provides a simple mechanism to track the most recent modification
 
 ## Installation
 
-Build the extension:
+### 1. Build the extension
 
 ```bash
 make
 sudo make install
 ```
 
-Enable in your database:
+### 2. Enable in PostgreSQL
 
 ```sql
 CREATE EXTENSION table_change_tracker;
 ```
 
-## Configuration
+### 3. Configure PostgreSQL
 
-This extension requires access to PostgreSQL shared memory. Add the following to your postgresql.conf file:
+This extension requires access to PostgreSQL shared memory. Add the following to your postgresql.conf file.
+Add to postgresql.conf:
 
 ```conf
 shared_preload_libraries = 'table_change_tracker'
 ```
 
-After modifying the configuration, restart PostgreSQL:
+### 4. Restart PostgreSQL
+
+After modifying the configuration, restart PostgreSQL.
 
 ```bash
 sudo systemctl restart postgresql   # For systemd systems
@@ -140,9 +143,9 @@ Only incurs overhead for tracked tables
 
 ## Requirements
 
-PostgreSQL 12 or later
-
-Appropriate permissions to install extensions
+- **PostgreSQL**: Version 12 or later
+- **Permissions**: Superuser or appropriate extension privileges
+- **Memory**: Sufficient shared memory for tracked tables
 
 ## License
 
