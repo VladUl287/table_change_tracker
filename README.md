@@ -35,11 +35,18 @@ CREATE EXTENSION table_change_tracker;
 
 ### 3. Configure PostgreSQL
 
-This extension requires access to PostgreSQL shared memory. Add the following to your postgresql.conf file.
-Add to postgresql.conf:
+This extension requires access to PostgreSQL shared memory.
+
+Add the following to your `postgresql.conf` file:
 
 ```conf
 shared_preload_libraries = 'table_change_tracker'
+```
+
+Or write to `postgresql.auto.conf` with:
+
+```sql
+ALTER SYSTEM SET shared_preload_libraries TO 'table_change_tracker';
 ```
 
 ### 4. Restart PostgreSQL
