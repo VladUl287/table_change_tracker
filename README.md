@@ -75,25 +75,25 @@ disable_table_tracking(table_name regclass)
 Checks whether a table is currently being tracked. Returns true if the table is tracked.
 
 ```c
-is_table_tracked(table_name regclass)
+is_table_tracking_enabled(table_name regclass)
 ```
 
 Returns the last modification timestamp for a tracked table. Returns NULL if the table is not tracked or hasn't been modified since tracking began.
 
 ```c
-get_last_timestamp(table_name regclass)
+get_timestamp(table_name regclass)
 ```
 
 Returns an array of timestamps for multiple tables. Useful for checking many tables at once.
 
 ```c
-get_last_timestamps(tables_names regclass[])
+get_last_timestamp(tables_names regclass[])
 ```
 
 Manually sets the last modification timestamp for a table. Returns true if the table is tracked and the timestamp was updated.
 
 ```c
-set_last_timestamp(table_name regclass, last_timestamp timestamptz)
+set_timestamp(table_name regclass, last_timestamp timestamptz)
 ```
 
 ## 💡 Usage Example
