@@ -47,12 +47,12 @@ static const dshash_parameters dshash_params = {
     .compare_function = dshash_memcmp,
 };
 
+PG_FUNCTION_INFO_V1(get_timestamp);
 PG_FUNCTION_INFO_V1(get_last_timestamp);
+PG_FUNCTION_INFO_V1(set_timestamp);
 PG_FUNCTION_INFO_V1(enable_table_tracking);
 PG_FUNCTION_INFO_V1(disable_table_tracking);
-PG_FUNCTION_INFO_V1(is_table_tracked);
-PG_FUNCTION_INFO_V1(set_last_timestamp);
-PG_FUNCTION_INFO_V1(get_last_timestamps);
+PG_FUNCTION_INFO_V1(is_table_tracking_enabled);
 
 static uint32 oid_key_hash(const void *key, size_t size, void *arg)
 {
@@ -67,7 +67,7 @@ static void tracker_detach_all(dshash_table *table, dsa_area *seg)
         dsa_detach(seg);
 }
 
-Datum is_table_tracked(PG_FUNCTION_ARGS)
+Datum is_table_tracking_enabled(PG_FUNCTION_ARGS)
 {
     Oid table_oid = InvalidOid;
     bool found;
@@ -154,7 +154,7 @@ Datum disable_table_tracking(PG_FUNCTION_ARGS)
     PG_RETURN_BOOL(result);
 }
 
-Datum get_last_timestamp(PG_FUNCTION_ARGS)
+Datum get_timestamp(PG_FUNCTION_ARGS)
 {
     Oid table_oid = InvalidOid;
     TimestampTz timestamp = 0;
@@ -185,17 +185,17 @@ Datum get_last_timestamp(PG_FUNCTION_ARGS)
     PG_RETURN_TIMESTAMPTZ(timestamp);
 }
 
-Datum get_last_timestamps(PG_FUNCTION_ARGS)
+Datum get_last_timestamp(PG_FUNCTION_ARGS)
 {
     ArrayType *input_array;
     Oid *table_oids;
     int num_tables;
-    Datum *timestamp_datums;
-    ArrayType *result_array;
     bool *nulls;
     dsa_area *seg = NULL;
     dshash_table *table = NULL;
-    bool *result_nulls;
+
+    TimestampTz latest_timestamp = 0;
+    bool found_any = false;
 
     if (PG_ARGISNULL(0))
         PG_RETURN_NULL();
@@ -205,9 +205,6 @@ Datum get_last_timestamps(PG_FUNCTION_ARGS)
     deconstruct_array(
         input_array, REGCLASSOID, sizeof(Oid), true, 'i', (Datum **)&table_oids, &nulls, &num_tables);
 
-    timestamp_datums = palloc(sizeof(Datum) * num_tables);
-    result_nulls = palloc(sizeof(bool) * num_tables);
-
     seg = dsa_attach(handlers->area_handle);
     table = dshash_attach(seg, &dshash_params, handlers->table_handle, NULL);
 
@@ -216,36 +213,31 @@ Datum get_last_timestamps(PG_FUNCTION_ARGS)
         tracker_entity *entry = NULL;
 
         if (nulls[i])
-        {
-            result_nulls[i] = true;
-            timestamp_datums[i] = (Datum)0;
             continue;
-        }
 
         entry = dshash_find(table, &table_oids[i], false);
 
         if (!entry)
+            continue;
+
+        if (!found_any || entry->timestamp > latest_timestamp)
         {
-            result_nulls[i] = true;
-            timestamp_datums[i] = (Datum)0;
+            latest_timestamp = entry->timestamp;
+            found_any = true;
         }
-        else
-        {
-            timestamp_datums[i] = TimestampTzGetDatum(entry->timestamp);
-            result_nulls[i] = false;
-            dshash_release_lock(table, entry);
-        }
+
+        dshash_release_lock(table, entry);
     }
 
     tracker_detach_all(table, seg);
 
-    result_array = construct_array(
-        timestamp_datums, num_tables, TIMESTAMPTZOID, sizeof(TimestampTz), true, 'd');
+    if (!found_any)
+        PG_RETURN_NULL();
 
-    PG_RETURN_ARRAYTYPE_P(result_array);
+    PG_RETURN_TIMESTAMPTZ(latest_timestamp);
 }
 
-Datum set_last_timestamp(PG_FUNCTION_ARGS)
+Datum set_timestamp(PG_FUNCTION_ARGS)
 {
     Oid table_oid = InvalidOid;
     TimestampTz last_timestamp;
