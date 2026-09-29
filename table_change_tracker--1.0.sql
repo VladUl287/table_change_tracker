@@ -12,7 +12,7 @@ LANGUAGE C STRICT;
 
 CREATE OR REPLACE FUNCTION set_timestamp(table_name regclass, last_timestamp timestamp with time zone)
 RETURNS BOOLEAN
-AS 'MODULE_PATHNAME', 'set_last_timestamp'
+AS 'MODULE_PATHNAME', 'set_timestamp'
 LANGUAGE C STRICT;
 
 CREATE OR REPLACE FUNCTION enable_table_tracking(table_name regclass)
